@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rmcp = { version = "0.16.0", features = ["server"] }
+rmcp = { version = "0.16.0", features = ["server", "macros", "transport-io"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
-schemars = "0.8"
+schemars = "1"
 syn = { version = "2", features = ["full", "visit"] }
 quote = "1"
-walkdir = "2"
+ignore = "0.4"
+semver = "1"
