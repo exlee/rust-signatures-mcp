@@ -1,7 +1,13 @@
 [package]
-name = "rust-sig-mcp"
+name = "rust-signatures-mcp"
 version = "0.1.0"
 edition = "2021"
+description = "MCP server that extracts and searches Rust function/struct/enum/trait/impl signatures and doc comments from source files and cached crates"
+license = "MIT"
+repository = "https://github.com/exlee/rust-signatures-mcp"
+readme = "README.md"
+keywords = ["mcp", "rust", "signatures", "code-analysis", "clap"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 rmcp = { version = "0.16.0", features = ["server", "macros", "transport-io"] }

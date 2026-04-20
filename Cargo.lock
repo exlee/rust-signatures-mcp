@@ -539,7 +539,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-sig-mcp"
+name = "rust-signatures-mcp"
 version = "0.1.0"
 dependencies = [
  "ignore",
