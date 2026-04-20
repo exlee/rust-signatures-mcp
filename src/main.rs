@@ -95,24 +95,33 @@ impl<'ast> Visit<'ast> for SignatureCollector {
     }
 }
 
-fn analyze_directory(dir: &str) -> String {
+fn analyze_file(path: &Path) -> Option<String> {
+    let src = fs::read_to_string(path).ok()?;
+    let ast: File = syn::parse_file(&src).ok()?;
+    let mut collector = SignatureCollector::new();
+    collector.visit_file(&ast);
+    Some(format!("=== {} ===\n{}{}", path.display(), collector.output, collector.output.is_empty().then_some("\n").unwrap_or("")))
+}
+
+fn analyze_path(target: &str) -> String {
+    let path = Path::new(target);
+    if !path.exists() {
+        return format!("Path not found: {}", target);
+    }
+    if path.is_file() {
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            return "Not a Rust file.".to_string();
+        }
+        return analyze_file(path).unwrap_or_else(|| "Failed to parse file.".to_string());
+    }
     let mut result = String::new();
-    for entry in WalkBuilder::new(dir).build().filter_map(|e| e.ok()) {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") { continue; }
-        let src = match fs::read_to_string(path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let ast: File = match syn::parse_file(&src) {
-            Ok(a) => a,
-            Err(_) => continue,
-        };
-        result.push_str(&format!("=== {} ===\n", path.display()));
-        let mut collector = SignatureCollector::new();
-        collector.visit_file(&ast);
-        result.push_str(&collector.output);
-        result.push('\n');
+    for entry in WalkBuilder::new(target).build().filter_map(|e| e.ok()) {
+        let entry_path = entry.path();
+        if entry_path.extension().and_then(|e| e.to_str()) != Some("rs") { continue; }
+        if let Some(file_output) = analyze_file(entry_path) {
+            result.push_str(&file_output);
+            result.push('\n');
+        }
     }
     if result.is_empty() {
         result.push_str("No Rust files found.");
@@ -230,23 +239,23 @@ fn search_signatures(content: &str, query: &str) -> String {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct AnalyzeArgs {
-    #[schemars(description = "Directory path to scan for Rust files")]
-    directory: String,
+    #[schemars(description = "File or directory path to scan for Rust signatures")]
+    path: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct AnalyzePackageArgs {
-    #[schemars(description = "Crate name (e.g. 'serde', 'clap_derive')")]
+    #[schemars(description = "Crate name (e.g. 'serde', 'clap_derive'). Alternatively, provide a direct file or directory path.")]
     package: String,
-    #[schemars(description = "Optional version (e.g. '1.0.228'). Defaults to latest cached version.")]
+    #[schemars(description = "Optional version (e.g. '1.0.228'). Defaults to latest cached version. Ignored if package is a path.")]
     version: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct SearchPackageArgs {
-    #[schemars(description = "Crate name to search in")]
+    #[schemars(description = "Crate name to search in. Alternatively, provide a direct file or directory path.")]
     package: String,
-    #[schemars(description = "Optional version. Defaults to latest cached version.")]
+    #[schemars(description = "Optional version. Defaults to latest cached version. Ignored if package is a path.")]
     version: Option<String>,
     #[schemars(description = "Search string to filter signatures (case-insensitive)")]
     query: String,
@@ -254,8 +263,8 @@ struct SearchPackageArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct SearchDirectoryArgs {
-    #[schemars(description = "Directory path to scan for Rust files")]
-    directory: String,
+    #[schemars(description = "File or directory path to scan for Rust files")]
+    path: String,
     #[schemars(description = "Search string to filter signatures (case-insensitive)")]
     query: String,
 }
@@ -275,55 +284,52 @@ impl RustSigServer {
 
 #[rmcp::tool_router]
 impl RustSigServer {
-    /// Analyze all Rust files in a directory and return their signatures and docstrings
-    #[tool(description = "Extract all fn/struct/enum/trait/impl signatures and doc comments from Rust files in a directory")]
+    /// Analyze Rust file(s) at a given path and return their signatures and docstrings
+    #[tool(description = "Extract all fn/struct/enum/trait/impl signatures and doc comments from a Rust file or all Rust files in a directory")]
     async fn analyze_rust(&self, params: rmcp::handler::server::wrapper::Parameters<AnalyzeArgs>) -> String {
-        let AnalyzeArgs { directory } = params.0;
-        let path = Path::new(&directory);
-        if !path.exists() {
-            return format!("Directory not found: {}", directory);
-        }
-        if !path.is_dir() {
-            return format!("Not a directory: {}", directory);
-        }
-        analyze_directory(&directory)
+        let AnalyzeArgs { path } = params.0;
+        analyze_path(&path)
     }
 
-    /// Analyze a crate from the local cargo cache
-    #[tool(description = "Extract signatures from a crate in the local cargo cache by name and optional version")]
+    /// Analyze a crate from the local cargo cache, or a direct file/directory path
+    #[tool(description = "Extract signatures from a crate in the local cargo cache by name and optional version, or from a direct file/directory path")]
     async fn analyze_package(&self, params: rmcp::handler::server::wrapper::Parameters<AnalyzePackageArgs>) -> String {
         let AnalyzePackageArgs { package, version } = params.0;
+        let target = Path::new(&package);
+        if target.exists() {
+            return analyze_path(&package);
+        }
         match find_package_dir(&package, version.as_deref()) {
-            Ok(dir) => analyze_directory(dir.to_str().unwrap_or_default()),
+            Ok(dir) => analyze_path(dir.to_str().unwrap_or_default()),
             Err(e) => e,
         }
     }
 
-    /// Search signatures in a cached crate
-    #[tool(description = "Find a crate in cargo cache and search its signatures for a given string")]
+    /// Search signatures in a cached crate or direct path
+    #[tool(description = "Find a crate in cargo cache (or use a direct file/directory path) and search its signatures for a given string")]
     async fn search_package_signatures(&self, params: rmcp::handler::server::wrapper::Parameters<SearchPackageArgs>) -> String {
         let SearchPackageArgs { package, version, query } = params.0;
-        match find_package_dir(&package, version.as_deref()) {
-            Ok(dir) => {
-                let sigs = analyze_directory(dir.to_str().unwrap_or_default());
-                search_signatures(&sigs, &query)
+        let target = Path::new(&package);
+        let sigs = if target.exists() {
+            analyze_path(&package)
+        } else {
+            match find_package_dir(&package, version.as_deref()) {
+                Ok(dir) => analyze_path(dir.to_str().unwrap_or_default()),
+                Err(e) => return e,
             }
-            Err(e) => e,
-        }
+        };
+        search_signatures(&sigs, &query)
     }
 
-    /// Search signatures in a directory
-    #[tool(description = "Analyze Rust files in a directory and search their signatures for a given string")]
+    /// Search signatures in a file or directory
+    #[tool(description = "Analyze a Rust file or directory and search its signatures for a given string")]
     async fn search_directory_signatures(&self, params: rmcp::handler::server::wrapper::Parameters<SearchDirectoryArgs>) -> String {
-        let SearchDirectoryArgs { directory, query } = params.0;
-        let path = Path::new(&directory);
-        if !path.exists() {
-            return format!("Directory not found: {}", directory);
+        let SearchDirectoryArgs { path, query } = params.0;
+        let target = Path::new(&path);
+        if !target.exists() {
+            return format!("Path not found: {}", path);
         }
-        if !path.is_dir() {
-            return format!("Not a directory: {}", directory);
-        }
-        let sigs = analyze_directory(&directory);
+        let sigs = analyze_path(&path);
         search_signatures(&sigs, &query)
     }
 }
