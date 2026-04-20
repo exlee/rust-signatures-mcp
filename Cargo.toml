@@ -1,0 +1,13 @@
+[package]
+name = "rust-sig-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rmcp = { version = "0.16.0", features = ["server"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+schemars = "0.8"
+syn = { version = "2", features = ["full", "visit"] }
+quote = "1"
+walkdir = "2"
