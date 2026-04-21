@@ -1,20 +1,27 @@
 use quote::quote;
-use syn::{visit::Visit, Attribute, File, ItemEnum, ItemFn, ItemImpl, ItemStruct, ItemTrait, Lit, Meta};
+use syn::{
+    visit::Visit, Attribute, File, ItemEnum, ItemFn, ItemImpl, ItemStruct, ItemTrait, Lit, Meta,
+};
 
 use crate::types::{EnumVariant, Signature};
 
 pub fn extract_docs(attrs: &[Attribute]) -> Vec<String> {
-    attrs.iter().filter_map(|a| {
-        if !a.path().is_ident("doc") { return None; }
-        if let Meta::NameValue(nv) = &a.meta {
-            if let syn::Expr::Lit(expr_lit) = &nv.value {
-                if let Lit::Str(s) = &expr_lit.lit {
-                    return Some(s.value().trim().to_string());
+    attrs
+        .iter()
+        .filter_map(|a| {
+            if !a.path().is_ident("doc") {
+                return None;
+            }
+            if let Meta::NameValue(nv) = &a.meta {
+                if let syn::Expr::Lit(expr_lit) = &nv.value {
+                    if let Lit::Str(s) = &expr_lit.lit {
+                        return Some(s.value().trim().to_string());
+                    }
                 }
             }
-        }
-        None
-    }).collect()
+            None
+        })
+        .collect()
 }
 
 struct SignatureCollector {
@@ -22,7 +29,11 @@ struct SignatureCollector {
 }
 
 impl SignatureCollector {
-    fn new() -> Self { Self { signatures: Vec::new() } }
+    fn new() -> Self {
+        Self {
+            signatures: Vec::new(),
+        }
+    }
 }
 
 impl<'ast> Visit<'ast> for SignatureCollector {
@@ -39,7 +50,11 @@ impl<'ast> Visit<'ast> for SignatureCollector {
         let docs = extract_docs(&i.attrs);
         let name = i.ident.to_string();
         let generics = format!("{}", quote! { #i.generics });
-        self.signatures.push(Signature::Struct { docs, name, generics });
+        self.signatures.push(Signature::Struct {
+            docs,
+            name,
+            generics,
+        });
     }
 
     fn visit_item_enum(&mut self, i: &'ast ItemEnum) {
@@ -52,32 +67,60 @@ impl<'ast> Visit<'ast> for SignatureCollector {
             let vname = variant.ident.to_string();
             match &variant.fields {
                 syn::Fields::Named(f) => {
-                    let fields: Vec<String> = f.named.iter().map(|f| {
-                        let (fname, ty) = (&f.ident, &f.ty);
-                        format!("{}: {}", quote! { #fname }, quote! { #ty })
-                    }).collect();
-                    variants.push(EnumVariant::Named { name: vname, docs: vdocs, fields });
+                    let fields: Vec<String> = f
+                        .named
+                        .iter()
+                        .map(|f| {
+                            let (fname, ty) = (&f.ident, &f.ty);
+                            format!("{}: {}", quote! { #fname }, quote! { #ty })
+                        })
+                        .collect();
+                    variants.push(EnumVariant::Named {
+                        name: vname,
+                        docs: vdocs,
+                        fields,
+                    });
                 }
                 syn::Fields::Unnamed(f) => {
-                    let types: Vec<String> = f.unnamed.iter().map(|f| {
-                        let ty = &f.ty;
-                        format!("{}", quote! { #ty })
-                    }).collect();
-                    variants.push(EnumVariant::Tuple { name: vname, docs: vdocs, types });
+                    let types: Vec<String> = f
+                        .unnamed
+                        .iter()
+                        .map(|f| {
+                            let ty = &f.ty;
+                            format!("{}", quote! { #ty })
+                        })
+                        .collect();
+                    variants.push(EnumVariant::Tuple {
+                        name: vname,
+                        docs: vdocs,
+                        types,
+                    });
                 }
                 syn::Fields::Unit => {
-                    variants.push(EnumVariant::Unit { name: vname, docs: vdocs });
+                    variants.push(EnumVariant::Unit {
+                        name: vname,
+                        docs: vdocs,
+                    });
                 }
             }
         }
-        self.signatures.push(Signature::Enum { docs, name, generics, variants });
+        self.signatures.push(Signature::Enum {
+            docs,
+            name,
+            generics,
+            variants,
+        });
     }
 
     fn visit_item_trait(&mut self, i: &'ast ItemTrait) {
         let docs = extract_docs(&i.attrs);
         let name = i.ident.to_string();
         let generics = format!("{}", quote! { #i.generics });
-        self.signatures.push(Signature::Trait { docs, name, generics });
+        self.signatures.push(Signature::Trait {
+            docs,
+            name,
+            generics,
+        });
     }
 
     fn visit_item_impl(&mut self, i: &'ast ItemImpl) {
@@ -193,7 +236,11 @@ struct KeyValueStore<K, V> {
         let sigs = analyze_source(src);
         assert_eq!(sigs.len(), 1);
         match &sigs[0] {
-            Signature::Struct { docs, name, generics } => {
+            Signature::Struct {
+                docs,
+                name,
+                generics,
+            } => {
                 assert_eq!(docs.len(), 1);
                 assert_eq!(docs[0], "A key-value store backed by a Vec.");
                 assert_eq!(name, "KeyValueStore");
@@ -218,7 +265,12 @@ enum HttpMethod {
         let sigs = analyze_source(src);
         assert_eq!(sigs.len(), 1);
         match &sigs[0] {
-            Signature::Enum { docs, name, variants, .. } => {
+            Signature::Enum {
+                docs,
+                name,
+                variants,
+                ..
+            } => {
                 assert_eq!(docs.len(), 1);
                 assert_eq!(docs[0], "HTTP request methods.");
                 assert_eq!(name, "HttpMethod");
@@ -265,7 +317,9 @@ trait Iterator {
 }
 "#;
         let sigs = analyze_source(src);
-        assert!(sigs.iter().any(|s| matches!(s, Signature::Trait { name, .. } if name == "Iterator")));
+        assert!(sigs
+            .iter()
+            .any(|s| matches!(s, Signature::Trait { name, .. } if name == "Iterator")));
     }
 
     #[test]
@@ -290,11 +344,17 @@ impl Point {
         let impl_sig = sigs.iter().find(|s| matches!(s, Signature::Impl { .. }));
         assert!(impl_sig.is_some(), "expected an Impl signature");
         match impl_sig.unwrap() {
-            Signature::Impl { trait_name, for_type, associated } => {
+            Signature::Impl {
+                trait_name,
+                for_type,
+                associated,
+            } => {
                 assert!(trait_name.is_none());
                 assert!(for_type.contains("Point"));
                 assert_eq!(associated.len(), 2);
-                assert!(associated.iter().any(|s| matches!(s, Signature::Fn { signature, .. } if signature.contains("new"))));
+                assert!(associated.iter().any(
+                    |s| matches!(s, Signature::Fn { signature, .. } if signature.contains("new"))
+                ));
                 assert!(associated.iter().any(|s| matches!(s, Signature::Fn { signature, .. } if signature.contains("distance_from_origin"))));
             }
             other => panic!("expected Impl, got {:?}", other),
@@ -315,7 +375,11 @@ impl std::fmt::Display for MyVec {
         let sigs = analyze_source(src);
         let impl_sig = sigs.iter().find(|s| matches!(s, Signature::Impl { .. }));
         match impl_sig.unwrap() {
-            Signature::Impl { trait_name, for_type, .. } => {
+            Signature::Impl {
+                trait_name,
+                for_type,
+                ..
+            } => {
                 assert!(trait_name.as_ref().unwrap().contains("Display"));
                 assert!(for_type.contains("MyVec"));
             }

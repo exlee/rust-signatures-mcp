@@ -36,7 +36,9 @@ pub fn find_package_dir(package: &str, version: Option<&str>) -> Result<PathBuf,
             .filter_map(|e| {
                 let name = e.file_name().to_str()?.to_string();
                 let ver = name.strip_prefix(&prefix)?.to_string();
-                if !e.path().is_dir() { return None; }
+                if !e.path().is_dir() {
+                    return None;
+                }
                 Some((e.path(), ver))
             })
             .collect();
@@ -53,7 +55,8 @@ pub fn find_package_dir(package: &str, version: Option<&str>) -> Result<PathBuf,
             let best = matching
                 .into_iter()
                 .filter(|(_, v)| {
-                    v.split('+').next()
+                    v.split('+')
+                        .next()
                         .and_then(|sv| semver::Version::parse(sv).ok())
                         .is_some()
                 })
@@ -75,7 +78,10 @@ pub fn find_package_dir(package: &str, version: Option<&str>) -> Result<PathBuf,
     }
 
     match version {
-        Some(v) => Err(format!("Package {} v{} not found in cargo cache", package, v)),
+        Some(v) => Err(format!(
+            "Package {} v{} not found in cargo cache",
+            package, v
+        )),
         None => Err(format!("Package {} not found in cargo cache", package)),
     }
 }

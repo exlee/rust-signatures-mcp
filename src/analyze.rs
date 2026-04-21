@@ -1,6 +1,6 @@
+use ignore::WalkBuilder;
 use std::fs;
 use std::path::Path;
-use ignore::WalkBuilder;
 
 use crate::collector::analyze_source;
 use crate::types::{AnalyzeResult, FileListResult, FileResult};
@@ -17,31 +17,43 @@ pub fn analyze_file(path: &Path) -> Option<FileResult> {
 pub fn analyze_path_structured(target: &str, max_signatures: Option<usize>) -> AnalyzeResult {
     let path = Path::new(target);
     if !path.exists() {
-        return AnalyzeResult::Error { message: format!("Path not found: {}", target) };
+        return AnalyzeResult::Error {
+            message: format!("Path not found: {}", target),
+        };
     }
     if path.is_file() {
         if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-            return AnalyzeResult::Error { message: "Not a Rust file.".to_string() };
+            return AnalyzeResult::Error {
+                message: "Not a Rust file.".to_string(),
+            };
         }
         match analyze_file(path) {
             Some(mut file_result) => {
                 if let Some(max) = max_signatures {
                     file_result.signatures.truncate(max);
                 }
-                AnalyzeResult::Success { files: vec![file_result] }
+                AnalyzeResult::Success {
+                    files: vec![file_result],
+                }
             }
-            None => AnalyzeResult::Error { message: "Failed to parse file.".to_string() },
+            None => AnalyzeResult::Error {
+                message: "Failed to parse file.".to_string(),
+            },
         }
     } else {
         let mut file_results = Vec::new();
         let mut total_sigs = 0usize;
         for entry in WalkBuilder::new(target).build().filter_map(|e| e.ok()) {
             let entry_path = entry.path();
-            if entry_path.extension().and_then(|e| e.to_str()) != Some("rs") { continue; }
+            if entry_path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
             if let Some(mut file_result) = analyze_file(entry_path) {
                 if let Some(max) = max_signatures {
                     let remaining = max.saturating_sub(total_sigs);
-                    if remaining == 0 { break; }
+                    if remaining == 0 {
+                        break;
+                    }
                     file_result.signatures.truncate(remaining);
                     total_sigs += file_result.signatures.len();
                 }
@@ -49,21 +61,29 @@ pub fn analyze_path_structured(target: &str, max_signatures: Option<usize>) -> A
             }
         }
         if file_results.is_empty() {
-            return AnalyzeResult::Error { message: "No Rust files found.".to_string() };
+            return AnalyzeResult::Error {
+                message: "No Rust files found.".to_string(),
+            };
         }
-        AnalyzeResult::Success { files: file_results }
+        AnalyzeResult::Success {
+            files: file_results,
+        }
     }
 }
 
 pub fn analyze_to_json(target: &str, max_signatures: Option<usize>) -> String {
     let result = analyze_path_structured(target, max_signatures);
-    serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"error","message":"Failed to serialize result"}"#.to_string())
+    serde_json::to_string(&result).unwrap_or_else(|_| {
+        r#"{"type":"error","message":"Failed to serialize result"}"#.to_string()
+    })
 }
 
 pub fn list_rust_files(target: &str) -> FileListResult {
     let path = Path::new(target);
     if !path.exists() {
-        return FileListResult::Error { message: format!("Path not found: {}", target) };
+        return FileListResult::Error {
+            message: format!("Path not found: {}", target),
+        };
     }
     let mut files = Vec::new();
     if path.is_file() {
@@ -79,7 +99,9 @@ pub fn list_rust_files(target: &str) -> FileListResult {
         }
     }
     if files.is_empty() {
-        return FileListResult::Error { message: "No Rust files found.".to_string() };
+        return FileListResult::Error {
+            message: "No Rust files found.".to_string(),
+        };
     }
     let total = files.len();
     FileListResult::Success { files, total }
@@ -87,7 +109,9 @@ pub fn list_rust_files(target: &str) -> FileListResult {
 
 pub fn list_rust_files_json(target: &str) -> String {
     let result = list_rust_files(target);
-    serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"error","message":"Failed to serialize result"}"#.to_string())
+    serde_json::to_string(&result).unwrap_or_else(|_| {
+        r#"{"type":"error","message":"Failed to serialize result"}"#.to_string()
+    })
 }
 
 #[cfg(test)]
@@ -133,7 +157,11 @@ mod tests {
     #[test]
     fn analyze_path_max_signatures() {
         let tmp = std::env::temp_dir().join("rust_sig_test_max.rs");
-        fs::write(&tmp, "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\nfn e() {}\n").unwrap();
+        fs::write(
+            &tmp,
+            "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\nfn e() {}\n",
+        )
+        .unwrap();
         let result = analyze_path_structured(tmp.to_str().unwrap(), Some(2));
         match result {
             AnalyzeResult::Success { files } => {
@@ -161,7 +189,9 @@ mod tests {
                 let paths: Vec<_> = files.iter().map(|f| &f.path).collect();
                 assert!(paths.iter().any(|p| p.ends_with("a.rs")));
                 assert!(paths.iter().any(|p| p.ends_with("b.rs")));
-                assert!(paths.iter().any(|p| p.contains("nested") && p.ends_with("d.rs")));
+                assert!(paths
+                    .iter()
+                    .any(|p| p.contains("nested") && p.ends_with("d.rs")));
             }
             AnalyzeResult::Error { message } => panic!("expected success, got: {}", message),
         }

@@ -1,8 +1,8 @@
-use regex::Regex;
 use crate::analyze::analyze_path_structured;
-use crate::types::{FileResult, MatchResult, SearchResult};
 use crate::types::render_signature;
 use crate::types::AnalyzeResult;
+use crate::types::{FileResult, MatchResult, SearchResult};
+use regex::Regex;
 
 pub fn search_in_files(files: &[FileResult], query: &str) -> Result<SearchResult, String> {
     let re = Regex::new(query).map_err(|e| format!("Invalid regex \"{}\": {}", query, e))?;
@@ -27,7 +27,10 @@ pub fn search_in_files(files: &[FileResult], query: &str) -> Result<SearchResult
         });
     }
 
-    Ok(SearchResult::Success { matches, total_matched })
+    Ok(SearchResult::Success {
+        matches,
+        total_matched,
+    })
 }
 
 pub fn search_signatures_json(target: &str, query: &str) -> String {
@@ -67,7 +70,10 @@ mod tests {
         }];
         let result = search_in_files(&files, "process_data").unwrap();
         match result {
-            SearchResult::Success { matches, total_matched } => {
+            SearchResult::Success {
+                matches,
+                total_matched,
+            } => {
                 assert_eq!(total_matched, 1);
                 assert_eq!(matches[0].file, "test.rs");
                 assert!(matches[0].line.contains("process_data"));
@@ -177,12 +183,19 @@ mod tests {
     #[test]
     fn search_signatures_json_produces_valid_json() {
         let tmp = std::env::temp_dir().join("rust_sig_search.rs");
-        std::fs::write(&tmp, "fn fetch_user(id: u64) -> User { unimplemented!() }\n").unwrap();
+        std::fs::write(
+            &tmp,
+            "fn fetch_user(id: u64) -> User { unimplemented!() }\n",
+        )
+        .unwrap();
         let json = search_signatures_json(tmp.to_str().unwrap(), "fetch_user");
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["type"], "success");
         assert_eq!(parsed["total_matched"], 1);
-        assert!(parsed["matches"][0]["line"].as_str().unwrap().contains("fetch_user"));
+        assert!(parsed["matches"][0]["line"]
+            .as_str()
+            .unwrap()
+            .contains("fetch_user"));
         std::fs::remove_file(&tmp).ok();
     }
 

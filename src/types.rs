@@ -3,24 +3,50 @@ use serde::Serialize;
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Signature {
-    Fn { docs: Vec<String>, signature: String },
-    Struct { docs: Vec<String>, name: String, generics: String },
+    Fn {
+        docs: Vec<String>,
+        signature: String,
+    },
+    Struct {
+        docs: Vec<String>,
+        name: String,
+        generics: String,
+    },
     Enum {
         docs: Vec<String>,
         name: String,
         generics: String,
         variants: Vec<EnumVariant>,
     },
-    Trait { docs: Vec<String>, name: String, generics: String },
-    Impl { trait_name: Option<String>, for_type: String, associated: Vec<Signature> },
+    Trait {
+        docs: Vec<String>,
+        name: String,
+        generics: String,
+    },
+    Impl {
+        trait_name: Option<String>,
+        for_type: String,
+        associated: Vec<Signature>,
+    },
 }
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EnumVariant {
-    Named { name: String, docs: Vec<String>, fields: Vec<String> },
-    Tuple { name: String, docs: Vec<String>, types: Vec<String> },
-    Unit { name: String, docs: Vec<String> },
+    Named {
+        name: String,
+        docs: Vec<String>,
+        fields: Vec<String>,
+    },
+    Tuple {
+        name: String,
+        docs: Vec<String>,
+        types: Vec<String>,
+    },
+    Unit {
+        name: String,
+        docs: Vec<String>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -39,8 +65,13 @@ pub struct FileResult {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SearchResult {
-    Success { matches: Vec<MatchResult>, total_matched: usize },
-    Error { message: String },
+    Success {
+        matches: Vec<MatchResult>,
+        total_matched: usize,
+    },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -60,46 +91,77 @@ pub fn render_signature(sig: &Signature) -> String {
     match sig {
         Signature::Fn { docs, signature } => {
             let mut out = String::new();
-            for d in docs { out.push_str(&format!("/// {}\n", d)); }
+            for d in docs {
+                out.push_str(&format!("/// {}\n", d));
+            }
             out.push_str(signature);
             out
         }
-        Signature::Struct { docs, name, generics } => {
+        Signature::Struct {
+            docs,
+            name,
+            generics,
+        } => {
             let mut out = String::new();
-            for d in docs { out.push_str(&format!("/// {}\n", d)); }
+            for d in docs {
+                out.push_str(&format!("/// {}\n", d));
+            }
             out.push_str(&format!("struct {}{}", name, generics));
             out
         }
-        Signature::Enum { docs, name, generics, variants } => {
+        Signature::Enum {
+            docs,
+            name,
+            generics,
+            variants,
+        } => {
             let mut out = String::new();
-            for d in docs { out.push_str(&format!("/// {}\n", d)); }
+            for d in docs {
+                out.push_str(&format!("/// {}\n", d));
+            }
             out.push_str(&format!("enum  {}{} {{\n", name, generics));
             for v in variants {
                 match v {
                     EnumVariant::Named { name, docs, fields } => {
-                        for d in docs { out.push_str(&format!("  /// {}\n", d)); }
+                        for d in docs {
+                            out.push_str(&format!("  /// {}\n", d));
+                        }
                         out.push_str(&format!("  {} {{ {} }}\n", name, fields.join(", ")));
                     }
                     EnumVariant::Tuple { name, docs, types } => {
-                        for d in docs { out.push_str(&format!("  /// {}\n", d)); }
+                        for d in docs {
+                            out.push_str(&format!("  /// {}\n", d));
+                        }
                         out.push_str(&format!("  {}({})\n", name, types.join(", ")));
                     }
                     EnumVariant::Unit { name, docs } => {
-                        for d in docs { out.push_str(&format!("  /// {}\n", d)); }
+                        for d in docs {
+                            out.push_str(&format!("  /// {}\n", d));
+                        }
                         out.push_str(&format!("  {}\n", name));
                     }
                 }
             }
-            out.push_str("}");
+            out.push('}');
             out
         }
-        Signature::Trait { docs, name, generics } => {
+        Signature::Trait {
+            docs,
+            name,
+            generics,
+        } => {
             let mut out = String::new();
-            for d in docs { out.push_str(&format!("/// {}\n", d)); }
+            for d in docs {
+                out.push_str(&format!("/// {}\n", d));
+            }
             out.push_str(&format!("trait  {}{}", name, generics));
             out
         }
-        Signature::Impl { trait_name, for_type, associated } => {
+        Signature::Impl {
+            trait_name,
+            for_type,
+            associated,
+        } => {
             let mut out = String::new();
             if let Some(tn) = trait_name {
                 out.push_str(&format!("impl   {} for {}", tn, for_type));
@@ -107,7 +169,10 @@ pub fn render_signature(sig: &Signature) -> String {
                 out.push_str(&format!("impl   {}", for_type));
             }
             for sig in associated {
-                out.push_str(&format!("\n  {}", render_signature(sig).replace('\n', "\n  ")));
+                out.push_str(&format!(
+                    "\n  {}",
+                    render_signature(sig).replace('\n', "\n  ")
+                ));
             }
             out
         }
@@ -136,9 +201,20 @@ mod tests {
             name: "Color".into(),
             generics: String::new(),
             variants: vec![
-                EnumVariant::Unit { name: "Red".into(), docs: vec![] },
-                EnumVariant::Tuple { name: "Rgb".into(), docs: vec![], types: vec!["u8".into(), "u8".into(), "u8".into()] },
-                EnumVariant::Named { name: "Custom".into(), docs: vec!["hex value".into()], fields: vec!["hex: String".into()] },
+                EnumVariant::Unit {
+                    name: "Red".into(),
+                    docs: vec![],
+                },
+                EnumVariant::Tuple {
+                    name: "Rgb".into(),
+                    docs: vec![],
+                    types: vec!["u8".into(), "u8".into(), "u8".into()],
+                },
+                EnumVariant::Named {
+                    name: "Custom".into(),
+                    docs: vec!["hex value".into()],
+                    fields: vec!["hex: String".into()],
+                },
             ],
         };
         let rendered = render_signature(&sig);
@@ -166,12 +242,17 @@ mod tests {
         assert_eq!(parsed["type"], "success");
         assert_eq!(parsed["files"][0]["path"], "foo.rs");
         assert_eq!(parsed["files"][0]["signatures"][0]["kind"], "fn");
-        assert_eq!(parsed["files"][0]["signatures"][0]["signature"], "fn   bar() -> bool");
+        assert_eq!(
+            parsed["files"][0]["signatures"][0]["signature"],
+            "fn   bar() -> bool"
+        );
     }
 
     #[test]
     fn analyze_result_serializes_error() {
-        let result = AnalyzeResult::Error { message: "not found".into() };
+        let result = AnalyzeResult::Error {
+            message: "not found".into(),
+        };
         let json = serde_json::to_string(&result).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["type"], "error");
