@@ -49,6 +49,13 @@ pub struct MatchResult {
     pub line: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FileListResult {
+    Success { files: Vec<String>, total: usize },
+    Error { message: String },
+}
+
 pub fn render_signature(sig: &Signature) -> String {
     match sig {
         Signature::Fn { docs, signature } => {

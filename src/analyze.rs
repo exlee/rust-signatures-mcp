@@ -3,7 +3,7 @@ use std::path::Path;
 use ignore::WalkBuilder;
 
 use crate::collector::analyze_source;
-use crate::types::{AnalyzeResult, FileResult};
+use crate::types::{AnalyzeResult, FileListResult, FileResult};
 
 pub fn analyze_file(path: &Path) -> Option<FileResult> {
     let src = fs::read_to_string(path).ok()?;
@@ -57,6 +57,36 @@ pub fn analyze_path_structured(target: &str, max_signatures: Option<usize>) -> A
 
 pub fn analyze_to_json(target: &str, max_signatures: Option<usize>) -> String {
     let result = analyze_path_structured(target, max_signatures);
+    serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"error","message":"Failed to serialize result"}"#.to_string())
+}
+
+pub fn list_rust_files(target: &str) -> FileListResult {
+    let path = Path::new(target);
+    if !path.exists() {
+        return FileListResult::Error { message: format!("Path not found: {}", target) };
+    }
+    let mut files = Vec::new();
+    if path.is_file() {
+        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            files.push(path.display().to_string());
+        }
+    } else {
+        for entry in WalkBuilder::new(target).build().filter_map(|e| e.ok()) {
+            let entry_path = entry.path();
+            if entry_path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                files.push(entry_path.display().to_string());
+            }
+        }
+    }
+    if files.is_empty() {
+        return FileListResult::Error { message: "No Rust files found.".to_string() };
+    }
+    let total = files.len();
+    FileListResult::Success { files, total }
+}
+
+pub fn list_rust_files_json(target: &str) -> String {
+    let result = list_rust_files(target);
     serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"error","message":"Failed to serialize result"}"#.to_string())
 }
 

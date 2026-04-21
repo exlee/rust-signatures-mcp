@@ -3,10 +3,10 @@ use rmcp::{model::*, handler::server::router::tool::ToolRouter, tool};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::analyze::analyze_to_json;
+use crate::analyze::{analyze_to_json, list_rust_files_json};
 use crate::registry::find_package_dir;
 use crate::search::search_signatures_json;
-use crate::types::{AnalyzeResult, SearchResult};
+use crate::types::{AnalyzeResult, FileListResult, SearchResult};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct AnalyzeArgs {
@@ -32,7 +32,7 @@ struct SearchPackageArgs {
     package: String,
     #[schemars(description = "Optional version. Defaults to latest cached version. Ignored if package is a path.")]
     version: Option<String>,
-    #[schemars(description = "Search string to filter signatures (case-insensitive)")]
+    #[schemars(description = "Regular expression (regex) to filter signatures. Matched case-insensitively against the full rendered signature including doc comments. Examples: 'process_data', 'async fn\\s+fetch', 'struct.*Config'.")]
     query: String,
 }
 
@@ -40,8 +40,14 @@ struct SearchPackageArgs {
 struct SearchDirectoryArgs {
     #[schemars(description = "Absolute path to a .rs file or directory to scan for Rust files. Must be an absolute path (e.g. /home/user/project/src).")]
     path: String,
-    #[schemars(description = "Search string to filter signatures (case-insensitive)")]
+    #[schemars(description = "Regular expression (regex) to filter signatures. Matched case-insensitively against the full rendered signature including doc comments. Examples: 'process_data', 'async fn\\s+fetch', 'struct.*Config'.")]
     query: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ListFilesArgs {
+    #[schemars(description = "Absolute path to a .rs file or directory to list Rust files from. Must be an absolute path (e.g. /home/user/project/src).")]
+    path: String,
 }
 
 #[derive(Clone)]
@@ -78,7 +84,7 @@ impl RustSigServer {
         }
     }
 
-    #[tool(description = "Find a crate in cargo cache (or use a direct file/directory path) and search its signatures for a given string. When providing a path, it must be an absolute path (e.g. /home/user/project/src). Returns structured JSON.")]
+    #[tool(description = "Find a crate in cargo cache (or use a direct file/directory path) and search its signatures using a regex query. When providing a path, it must be an absolute path (e.g. /home/user/project/src). The query parameter is a regular expression matched case-insensitively against rendered signatures (including doc comments). Returns structured JSON.")]
     async fn search_package_signatures(&self, params: rmcp::handler::server::wrapper::Parameters<SearchPackageArgs>) -> String {
         let SearchPackageArgs { package, version, query } = params.0;
         let target = Path::new(&package);
@@ -91,7 +97,7 @@ impl RustSigServer {
         }
     }
 
-    #[tool(description = "Analyze a Rust file or directory and search its signatures for a given string. The path parameter must be an absolute path (e.g. /home/user/project/src). Returns structured JSON.")]
+    #[tool(description = "Analyze a Rust file or directory and search its signatures using a regex query. The path parameter must be an absolute path (e.g. /home/user/project/src). The query parameter is a regular expression matched case-insensitively against rendered signatures (including doc comments). Returns structured JSON.")]
     async fn search_directory_signatures(&self, params: rmcp::handler::server::wrapper::Parameters<SearchDirectoryArgs>) -> String {
         let SearchDirectoryArgs { path, query } = params.0;
         let target = Path::new(&path);
@@ -101,6 +107,18 @@ impl RustSigServer {
             }).unwrap();
         }
         search_signatures_json(&path, &query)
+    }
+
+    #[tool(description = "List all Rust (.rs) files in a directory (recursively, respecting .gitignore). Returns a plain list of file paths. The path parameter must be an absolute path (e.g. /home/user/project/src).")]
+    async fn list_project_files(&self, params: rmcp::handler::server::wrapper::Parameters<ListFilesArgs>) -> String {
+        let ListFilesArgs { path } = params.0;
+        let target = Path::new(&path);
+        if !target.exists() {
+            return serde_json::to_string(&FileListResult::Error {
+                message: format!("Path not found: {}", path),
+            }).unwrap();
+        }
+        list_rust_files_json(&path)
     }
 }
 

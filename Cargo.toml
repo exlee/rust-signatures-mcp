@@ -19,3 +19,4 @@ syn = { version = "2", features = ["full", "visit"] }
 quote = "1"
 ignore = "0.4"
 semver = "1"
+regex = "1"
