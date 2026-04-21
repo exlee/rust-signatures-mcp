@@ -125,10 +125,7 @@ impl RustSigServer {
 #[rmcp::tool_handler]
 impl rmcp::ServerHandler for RustSigServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some("Analyzes Rust source files and extracts signatures with doc comments. Returns structured JSON. Can analyze local directories or crates from cargo cache. IMPORTANT: All path parameters must be absolute paths (e.g. /home/user/project/src), not relative paths.".into()),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_instructions("Analyzes Rust source files and extracts signatures with doc comments. Returns structured JSON. Can analyze local directories or crates from cargo cache. IMPORTANT: All path parameters must be absolute paths (e.g. /home/user/project/src), not relative paths.")
     }
 }
