@@ -10,7 +10,7 @@ use crate::types::{AnalyzeResult, SearchResult};
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct AnalyzeArgs {
-    #[schemars(description = "File or directory path to scan for Rust signatures")]
+    #[schemars(description = "Absolute path to a .rs file or directory to scan for Rust signatures. Must be an absolute path (e.g. /home/user/project/src).")]
     path: String,
     #[schemars(description = "Optional maximum number of signatures to return. Useful for large crates to limit context size.")]
     max_signatures: Option<usize>,
@@ -18,7 +18,7 @@ struct AnalyzeArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct AnalyzePackageArgs {
-    #[schemars(description = "Crate name (e.g. 'serde', 'clap_derive'). Alternatively, provide a direct file or directory path.")]
+    #[schemars(description = "Crate name (e.g. 'serde', 'clap_derive'). Alternatively, an absolute path to a .rs file or directory. Must be an absolute path if providing a path (e.g. /home/user/project/src).")]
     package: String,
     #[schemars(description = "Optional version (e.g. '1.0.228'). Defaults to latest cached version. Ignored if package is a path.")]
     version: Option<String>,
@@ -28,7 +28,7 @@ struct AnalyzePackageArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct SearchPackageArgs {
-    #[schemars(description = "Crate name to search in. Alternatively, provide a direct file or directory path.")]
+    #[schemars(description = "Crate name to search in. Alternatively, an absolute path to a .rs file or directory. Must be an absolute path if providing a path (e.g. /home/user/project/src).")]
     package: String,
     #[schemars(description = "Optional version. Defaults to latest cached version. Ignored if package is a path.")]
     version: Option<String>,
@@ -38,7 +38,7 @@ struct SearchPackageArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct SearchDirectoryArgs {
-    #[schemars(description = "File or directory path to scan for Rust files")]
+    #[schemars(description = "Absolute path to a .rs file or directory to scan for Rust files. Must be an absolute path (e.g. /home/user/project/src).")]
     path: String,
     #[schemars(description = "Search string to filter signatures (case-insensitive)")]
     query: String,
@@ -59,13 +59,13 @@ impl RustSigServer {
 
 #[rmcp::tool_router]
 impl RustSigServer {
-    #[tool(description = "Extract all fn/struct/enum/trait/impl signatures and doc comments from a Rust file or all Rust files in a directory. Returns structured JSON.")]
+    #[tool(description = "Extract all fn/struct/enum/trait/impl signatures and doc comments from a Rust file or all Rust files in a directory. The path parameter must be an absolute path (e.g. /home/user/project/src). Returns structured JSON.")]
     async fn analyze_rust(&self, params: rmcp::handler::server::wrapper::Parameters<AnalyzeArgs>) -> String {
         let AnalyzeArgs { path, max_signatures } = params.0;
         analyze_to_json(&path, max_signatures)
     }
 
-    #[tool(description = "Extract signatures from a crate in the local cargo cache by name and optional version, or from a direct file/directory path. Returns structured JSON.")]
+    #[tool(description = "Extract signatures from a crate in the local cargo cache by name and optional version, or from a direct file/directory path. When providing a path, it must be an absolute path (e.g. /home/user/project/src). Returns structured JSON.")]
     async fn analyze_package(&self, params: rmcp::handler::server::wrapper::Parameters<AnalyzePackageArgs>) -> String {
         let AnalyzePackageArgs { package, version, max_signatures } = params.0;
         let target = Path::new(&package);
@@ -78,7 +78,7 @@ impl RustSigServer {
         }
     }
 
-    #[tool(description = "Find a crate in cargo cache (or use a direct file/directory path) and search its signatures for a given string. Returns structured JSON.")]
+    #[tool(description = "Find a crate in cargo cache (or use a direct file/directory path) and search its signatures for a given string. When providing a path, it must be an absolute path (e.g. /home/user/project/src). Returns structured JSON.")]
     async fn search_package_signatures(&self, params: rmcp::handler::server::wrapper::Parameters<SearchPackageArgs>) -> String {
         let SearchPackageArgs { package, version, query } = params.0;
         let target = Path::new(&package);
@@ -91,7 +91,7 @@ impl RustSigServer {
         }
     }
 
-    #[tool(description = "Analyze a Rust file or directory and search its signatures for a given string. Returns structured JSON.")]
+    #[tool(description = "Analyze a Rust file or directory and search its signatures for a given string. The path parameter must be an absolute path (e.g. /home/user/project/src). Returns structured JSON.")]
     async fn search_directory_signatures(&self, params: rmcp::handler::server::wrapper::Parameters<SearchDirectoryArgs>) -> String {
         let SearchDirectoryArgs { path, query } = params.0;
         let target = Path::new(&path);
@@ -108,7 +108,7 @@ impl RustSigServer {
 impl rmcp::ServerHandler for RustSigServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            instructions: Some("Analyzes Rust source files and extracts signatures with doc comments. Returns structured JSON. Can analyze local directories or crates from cargo cache.".into()),
+            instructions: Some("Analyzes Rust source files and extracts signatures with doc comments. Returns structured JSON. Can analyze local directories or crates from cargo cache. IMPORTANT: All path parameters must be absolute paths (e.g. /home/user/project/src), not relative paths.".into()),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
