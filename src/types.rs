@@ -104,7 +104,8 @@ pub enum SignatureListItem {
 /// Classify signatures into groups by kind, preserving order of first appearance.
 pub fn group_signatures_by_kind(signatures: &[Signature]) -> Vec<SignatureGroup<'_>> {
     let mut groups: Vec<SignatureGroup<'_>> = Vec::new();
-    let mut group_indices: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut group_indices: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::new();
 
     for sig in signatures {
         let (label, item) = render_grouped_item(sig);

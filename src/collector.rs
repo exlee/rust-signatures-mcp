@@ -136,11 +136,7 @@ impl<'ast> Visit<'ast> for SignatureCollector {
                     });
                 }
                 syn::Fields::Unnamed(f) => {
-                    let types: Vec<String> = f
-                        .unnamed
-                        .iter()
-                        .map(|f| format_type(&f.ty))
-                        .collect();
+                    let types: Vec<String> = f.unnamed.iter().map(|f| format_type(&f.ty)).collect();
                     variants.push(EnumVariant::Tuple {
                         name: vname,
                         docs: vdocs,
@@ -188,10 +184,9 @@ impl<'ast> Visit<'ast> for SignatureCollector {
                 syn::ImplItem::Fn(f) => {
                     let docs = extract_docs(&f.attrs);
                     let signature = format_fn_sig(&f.sig);
-                    associated_collector.signatures.push(Signature::Fn {
-                        docs,
-                        signature,
-                    });
+                    associated_collector
+                        .signatures
+                        .push(Signature::Fn { docs, signature });
                 }
                 syn::ImplItem::Const(c) => {
                     associated_collector.signatures.push(Signature::Fn {
@@ -247,7 +242,11 @@ pub fn greet(name: &str) -> String {
                 assert!(signature.contains("name"));
                 assert!(signature.contains("String"));
                 // prettyplease should produce proper spacing: &str not & str
-                assert!(!signature.contains("& str"), "should have &str not & str: got {}", signature);
+                assert!(
+                    !signature.contains("& str"),
+                    "should have &str not & str: got {}",
+                    signature
+                );
             }
             other => panic!("expected Fn, got {:?}", other),
         }
@@ -505,13 +504,29 @@ fn spaced() {}
         match &sigs[0] {
             Signature::Fn { signature, .. } => {
                 // prettyplease should produce proper spacing: <T: Clone> not < T : Clone >
-                assert!(signature.contains("<T: Clone>"), "generics should have tight spacing: got {}", signature);
+                assert!(
+                    signature.contains("<T: Clone>"),
+                    "generics should have tight spacing: got {}",
+                    signature
+                );
                 // &T not & T
-                assert!(signature.contains("&T"), "ref should have tight spacing: got {}", signature);
+                assert!(
+                    signature.contains("&T"),
+                    "ref should have tight spacing: got {}",
+                    signature
+                );
                 // &[Vec<u8>] not &[ Vec < u8 > ]
-                assert!(signature.contains("&[Vec<u8>]"), "slice type should have tight spacing: got {}", signature);
+                assert!(
+                    signature.contains("&[Vec<u8>]"),
+                    "slice type should have tight spacing: got {}",
+                    signature
+                );
                 // Vec<u8> not Vec < u8 >
-                assert!(signature.contains("Vec<u8>"), "generic type should have tight spacing: got {}", signature);
+                assert!(
+                    signature.contains("Vec<u8>"),
+                    "generic type should have tight spacing: got {}",
+                    signature
+                );
             }
             other => panic!("expected Fn, got {:?}", other),
         }

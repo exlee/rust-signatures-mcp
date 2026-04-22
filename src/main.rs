@@ -9,7 +9,10 @@ mod types;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "rust-signatures", about = "Extract and search Rust signatures from source files and cached crates")]
+#[command(
+    name = "rust-signatures",
+    about = "Extract and search Rust signatures from source files and cached crates"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -85,7 +88,10 @@ fn main() {
                 match registry::find_package_dir(&package, version.as_deref()) {
                     Ok(dir) => println!(
                         "{}",
-                        analyze::analyze_to_markdown(dir.to_str().unwrap_or_default(), max_signatures)
+                        analyze::analyze_to_markdown(
+                            dir.to_str().unwrap_or_default(),
+                            max_signatures
+                        )
                     ),
                     Err(e) => println!("Error: {}", e),
                 }
@@ -98,7 +104,10 @@ fn main() {
         } => {
             let target = std::path::Path::new(&package);
             if target.exists() {
-                println!("{}", search::search_signatures_to_markdown(&package, &query));
+                println!(
+                    "{}",
+                    search::search_signatures_to_markdown(&package, &query)
+                );
             } else {
                 match registry::find_package_dir(&package, version.as_deref()) {
                     Ok(dir) => {
@@ -134,14 +143,20 @@ fn main() {
         Commands::Serve => {
             #[cfg(feature = "mcp")]
             {
-                use server::RustSigServer;
                 use rmcp::ServiceExt;
+                use server::RustSigServer;
 
                 let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
                 rt.block_on(async {
                     let transport = rmcp::transport::stdio();
                     let server = RustSigServer::new();
-                    server.serve(transport).await.expect("Failed to serve").waiting().await.expect("Failed to wait");
+                    server
+                        .serve(transport)
+                        .await
+                        .expect("Failed to serve")
+                        .waiting()
+                        .await
+                        .expect("Failed to wait");
                 });
             }
         }
