@@ -87,6 +87,161 @@ pub enum FileListResult {
     Error { message: String },
 }
 
+/// A categorized group of signatures of the same kind, ready for markdown rendering.
+pub struct SignatureGroup<'a> {
+    pub label: &'a str,
+    pub items: Vec<SignatureListItem>,
+}
+
+/// A single rendered signature item within a group.
+pub enum SignatureListItem {
+    /// A top-level signature rendered as a bullet.
+    Bullet(String),
+    /// A sub-block (e.g. impl with associated items) rendered as an indented code block.
+    Block(String),
+}
+
+/// Classify signatures into groups by kind, preserving order of first appearance.
+pub fn group_signatures_by_kind(signatures: &[Signature]) -> Vec<SignatureGroup<'_>> {
+    let mut groups: Vec<SignatureGroup<'_>> = Vec::new();
+    let mut group_indices: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+
+    for sig in signatures {
+        let (label, item) = render_grouped_item(sig);
+        let idx = *group_indices.entry(label).or_insert_with(|| {
+            let i = groups.len();
+            groups.push(SignatureGroup {
+                label,
+                items: Vec::new(),
+            });
+            i
+        });
+        groups[idx].items.push(item);
+    }
+    groups
+}
+
+/// Render a single signature into a label + item for grouping.
+fn render_grouped_item(sig: &Signature) -> (&'static str, SignatureListItem) {
+    match sig {
+        Signature::Fn { docs, signature } => {
+            let mut rendered = String::new();
+            for d in docs {
+                rendered.push_str(&format!("/// {}\n", d));
+            }
+            // Strip "fn " keyword — the ### Functions heading already conveys it.
+            // Use replacen to handle "async fn", "const fn", etc.
+            let sig_text = signature.trim_start().replacen("fn ", "", 1);
+            rendered.push_str(sig_text.trim_start());
+            ("Functions", SignatureListItem::Bullet(rendered))
+        }
+        Signature::Struct {
+            docs,
+            name,
+            generics,
+        } => {
+            let mut rendered = String::new();
+            for d in docs {
+                rendered.push_str(&format!("/// {}\n", d));
+            }
+            // Strip leading "struct" — the ### Structs heading already conveys it
+            rendered.push_str(name);
+            let gen = generics.trim();
+            if !gen.is_empty() {
+                rendered.push_str(gen);
+            }
+            ("Structs", SignatureListItem::Bullet(rendered))
+        }
+        Signature::Enum {
+            docs,
+            name,
+            generics,
+            variants,
+        } => {
+            let mut rendered = String::new();
+            for d in docs {
+                rendered.push_str(&format!("/// {}\n", d));
+            }
+            rendered.push_str(&format!("{}{} {{\n", name, generics.trim()));
+            for v in variants {
+                match v {
+                    EnumVariant::Named { name, docs, fields } => {
+                        for d in docs {
+                            rendered.push_str(&format!("  /// {}\n", d));
+                        }
+                        rendered.push_str(&format!("  {} {{ {} }},\n", name, fields.join(", ")));
+                    }
+                    EnumVariant::Tuple { name, docs, types } => {
+                        for d in docs {
+                            rendered.push_str(&format!("  /// {}\n", d));
+                        }
+                        rendered.push_str(&format!("  {}({}),\n", name, types.join(", ")));
+                    }
+                    EnumVariant::Unit { name, docs } => {
+                        for d in docs {
+                            rendered.push_str(&format!("  /// {}\n", d));
+                        }
+                        rendered.push_str(&format!("  {},\n", name));
+                    }
+                }
+            }
+            rendered.push('}');
+            ("Enums", SignatureListItem::Bullet(rendered))
+        }
+        Signature::Trait {
+            docs,
+            name,
+            generics,
+        } => {
+            let mut rendered = String::new();
+            for d in docs {
+                rendered.push_str(&format!("/// {}\n", d));
+            }
+            // Strip leading "trait" — the ### Traits heading already conveys it
+            rendered.push_str(name);
+            let gen = generics.trim();
+            if !gen.is_empty() {
+                rendered.push_str(gen);
+            }
+            ("Traits", SignatureListItem::Bullet(rendered))
+        }
+        Signature::Impl {
+            trait_name,
+            for_type,
+            associated,
+        } => {
+            let mut rendered = String::new();
+            if let Some(tn) = trait_name {
+                rendered.push_str(&format!("impl {} for {}", tn, for_type));
+            } else {
+                rendered.push_str(&format!("impl {}", for_type));
+            }
+            for sig in associated {
+                rendered.push_str("\n  ");
+                match sig {
+                    Signature::Fn { docs, signature } => {
+                        for d in docs {
+                            rendered.push_str(&format!("/// {}\n  ", d));
+                        }
+                        rendered.push_str(signature);
+                    }
+                    Signature::Impl {
+                        trait_name: None,
+                        for_type,
+                        associated: _,
+                    } => {
+                        rendered.push_str(&format!("type {}", for_type));
+                    }
+                    _ => {
+                        rendered.push_str(&render_signature(sig));
+                    }
+                }
+            }
+            ("Impls", SignatureListItem::Block(rendered))
+        }
+    }
+}
+
 pub fn render_signature(sig: &Signature) -> String {
     match sig {
         Signature::Fn { docs, signature } => {
@@ -163,10 +318,13 @@ pub fn render_signature(sig: &Signature) -> String {
             associated,
         } => {
             let mut out = String::new();
-            if let Some(tn) = trait_name {
-                out.push_str(&format!("impl   {} for {}", tn, for_type));
+            // An Impl with no trait_name and no associated items is an associated type alias
+            if trait_name.is_none() && associated.is_empty() {
+                out.push_str(&format!("type {}", for_type));
+            } else if let Some(tn) = trait_name {
+                out.push_str(&format!("impl {} for {}", tn, for_type));
             } else {
-                out.push_str(&format!("impl   {}", for_type));
+                out.push_str(&format!("impl {}", for_type));
             }
             for sig in associated {
                 out.push_str(&format!(

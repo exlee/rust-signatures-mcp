@@ -71,11 +71,53 @@ pub fn analyze_path_structured(target: &str, max_signatures: Option<usize>) -> A
     }
 }
 
+#[cfg(feature = "mcp")]
 pub fn analyze_to_json(target: &str, max_signatures: Option<usize>) -> String {
     let result = analyze_path_structured(target, max_signatures);
     serde_json::to_string(&result).unwrap_or_else(|_| {
         r#"{"type":"error","message":"Failed to serialize result"}"#.to_string()
     })
+}
+
+pub fn analyze_to_markdown(target: &str, max_signatures: Option<usize>) -> String {
+    match analyze_path_structured(target, max_signatures) {
+        AnalyzeResult::Success { files } => {
+            let mut md = String::new();
+            for file in &files {
+                let groups = crate::types::group_signatures_by_kind(&file.signatures);
+                if groups.iter().all(|g| g.items.is_empty()) {
+                    continue;
+                }
+                md.push_str(&format!("## {}\n\n", file.path));
+                for group in &groups {
+                    if group.items.is_empty() {
+                        continue;
+                    }
+                    md.push_str(&format!("### {}\n\n", group.label));
+                    for item in &group.items {
+                        match item {
+                            crate::types::SignatureListItem::Bullet(text) => {
+                                md.push_str("- `");
+                                md.push_str(text);
+                                md.push_str("`\n\n");
+                            }
+                            crate::types::SignatureListItem::Block(text) => {
+                                md.push_str("```rust\n");
+                                md.push_str(text);
+                                md.push_str("\n```\n\n");
+                            }
+                        }
+                    }
+                }
+            }
+            if md.is_empty() {
+                "No signatures found.".to_string()
+            } else {
+                md
+            }
+        }
+        AnalyzeResult::Error { message } => format!("Error: {}", message),
+    }
 }
 
 pub fn list_rust_files(target: &str) -> FileListResult {
@@ -107,11 +149,26 @@ pub fn list_rust_files(target: &str) -> FileListResult {
     FileListResult::Success { files, total }
 }
 
+#[cfg(feature = "mcp")]
 pub fn list_rust_files_json(target: &str) -> String {
     let result = list_rust_files(target);
     serde_json::to_string(&result).unwrap_or_else(|_| {
         r#"{"type":"error","message":"Failed to serialize result"}"#.to_string()
     })
+}
+
+pub fn list_rust_files_to_markdown(target: &str) -> String {
+    match list_rust_files(target) {
+        FileListResult::Success { files, total } => {
+            let mut md = String::new();
+            for f in &files {
+                md.push_str(&format!("- {}\n", f));
+            }
+            md.push_str(&format!("\n{} file(s) found.", total));
+            md
+        }
+        FileListResult::Error { message } => format!("Error: {}", message),
+    }
 }
 
 #[cfg(test)]
@@ -238,5 +295,31 @@ mod tests {
         assert_eq!(parsed["type"], "success");
         assert_eq!(parsed["files"][0]["signatures"][0]["kind"], "fn");
         fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn analyze_to_markdown_produces_markdown() {
+        let tmp = std::env::temp_dir().join("rust_sig_md.rs");
+        fs::write(&tmp, "fn md_test() -> u64 { 42 }\n").unwrap();
+        let md = analyze_to_markdown(tmp.to_str().unwrap(), None);
+        assert!(md.contains("## "));
+        assert!(md.contains("### Functions"));
+        assert!(md.contains("md_test"));
+        assert!(md.contains("- `"));
+        assert!(!md.contains("\"kind\""));
+        fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn list_rust_files_to_markdown_produces_markdown() {
+        let dir = std::env::temp_dir().join("rust_sig_listmd");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("a.rs"), "fn a() {}\n").unwrap();
+        fs::write(dir.join("b.rs"), "fn b() {}\n").unwrap();
+
+        let md = list_rust_files_to_markdown(dir.to_str().unwrap());
+        assert!(md.starts_with("- "));
+        assert!(md.contains("2 file(s) found."));
+        fs::remove_dir_all(&dir).ok();
     }
 }

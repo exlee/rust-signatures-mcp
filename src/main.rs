@@ -71,7 +71,7 @@ fn main() {
             path,
             max_signatures,
         } => {
-            println!("{}", analyze::analyze_to_json(&path, max_signatures));
+            println!("{}", analyze::analyze_to_markdown(&path, max_signatures));
         }
         Commands::AnalyzePackage {
             package,
@@ -80,17 +80,14 @@ fn main() {
         } => {
             let target = std::path::Path::new(&package);
             if target.exists() {
-                println!("{}", analyze::analyze_to_json(&package, max_signatures));
+                println!("{}", analyze::analyze_to_markdown(&package, max_signatures));
             } else {
                 match registry::find_package_dir(&package, version.as_deref()) {
                     Ok(dir) => println!(
                         "{}",
-                        analyze::analyze_to_json(dir.to_str().unwrap_or_default(), max_signatures)
+                        analyze::analyze_to_markdown(dir.to_str().unwrap_or_default(), max_signatures)
                     ),
-                    Err(e) => println!(
-                        "{}",
-                        serde_json::to_string(&types::AnalyzeResult::Error { message: e }).unwrap()
-                    ),
+                    Err(e) => println!("Error: {}", e),
                 }
             }
         }
@@ -101,51 +98,36 @@ fn main() {
         } => {
             let target = std::path::Path::new(&package);
             if target.exists() {
-                println!("{}", search::search_signatures_json(&package, &query));
+                println!("{}", search::search_signatures_to_markdown(&package, &query));
             } else {
                 match registry::find_package_dir(&package, version.as_deref()) {
                     Ok(dir) => {
                         println!(
                             "{}",
-                            search::search_signatures_json(
+                            search::search_signatures_to_markdown(
                                 dir.to_str().unwrap_or_default(),
                                 &query
                             )
                         )
                     }
-                    Err(e) => println!(
-                        "{}",
-                        serde_json::to_string(&types::SearchResult::Error { message: e }).unwrap()
-                    ),
+                    Err(e) => println!("Error: {}", e),
                 }
             }
         }
         Commands::SearchDirectory { path, query } => {
             let target = std::path::Path::new(&path);
             if !target.exists() {
-                println!(
-                    "{}",
-                    serde_json::to_string(&types::SearchResult::Error {
-                        message: format!("Path not found: {}", path)
-                    })
-                    .unwrap()
-                );
+                println!("Error: Path not found: {}", path);
             } else {
-                println!("{}", search::search_signatures_json(&path, &query));
+                println!("{}", search::search_signatures_to_markdown(&path, &query));
             }
         }
         Commands::ListFiles { path } => {
             let target = std::path::Path::new(&path);
             if !target.exists() {
-                println!(
-                    "{}",
-                    serde_json::to_string(&types::FileListResult::Error {
-                        message: format!("Path not found: {}", path)
-                    })
-                    .unwrap()
-                );
+                println!("Error: Path not found: {}", path);
             } else {
-                println!("{}", analyze::list_rust_files_json(&path));
+                println!("{}", analyze::list_rust_files_to_markdown(&path));
             }
         }
         #[cfg(feature = "mcp")]

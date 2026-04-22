@@ -33,6 +33,7 @@ pub fn search_in_files(files: &[FileResult], query: &str) -> Result<SearchResult
     })
 }
 
+#[cfg(feature = "mcp")]
 pub fn search_signatures_json(target: &str, query: &str) -> String {
     let result = analyze_path_structured(target, None);
     let files = match result {
@@ -45,6 +46,38 @@ pub fn search_signatures_json(target: &str, query: &str) -> String {
     match search_in_files(&files, query) {
         Ok(search_result) => serde_json::to_string(&search_result).unwrap(),
         Err(e) => serde_json::to_string(&SearchResult::Error { message: e }).unwrap(),
+    }
+}
+
+pub fn search_signatures_to_markdown(target: &str, query: &str) -> String {
+    let result = analyze_path_structured(target, None);
+    let files = match result {
+        AnalyzeResult::Success { files } => files,
+        AnalyzeResult::Error { message } => return format!("Error: {}", message),
+    };
+
+    match search_in_files(&files, query) {
+        Ok(SearchResult::Success {
+            matches,
+            total_matched,
+        }) => {
+            let mut md = String::new();
+            let mut current_file = String::new();
+            for m in &matches {
+                if m.file != current_file {
+                    current_file = m.file.clone();
+                    md.push_str(&format!("## {}\n\n", m.file));
+                }
+                md.push_str(&format!("- `{}`\n\n", m.line.trim()));
+            }
+            md.push_str(&format!(
+                "*{} match(es) for regex: `{}`*",
+                total_matched, query
+            ));
+            md
+        }
+        Ok(SearchResult::Error { message }) => format!("Error: {}", message),
+        Err(e) => format!("Error: {}", e),
     }
 }
 
@@ -216,6 +249,32 @@ mod tests {
         let json = search_signatures_json(tmp.to_str().unwrap(), "[invalid");
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["type"], "error");
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn search_signatures_to_markdown_produces_markdown() {
+        let tmp = std::env::temp_dir().join("rust_sig_searchmd.rs");
+        std::fs::write(
+            &tmp,
+            "fn fetch_user(id: u64) -> User { unimplemented!() }\n",
+        )
+        .unwrap();
+        let md = search_signatures_to_markdown(tmp.to_str().unwrap(), "fetch_user");
+        assert!(md.contains("## "));
+        assert!(md.contains("fetch_user"));
+        assert!(md.contains("1 match(es)"));
+        assert!(md.contains("`fetch_user`"));
+        assert!(!md.contains("\"kind\""));
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn search_signatures_to_markdown_no_match() {
+        let tmp = std::env::temp_dir().join("rust_sig_searchmd_nomatch.rs");
+        std::fs::write(&tmp, "fn hello() {}\n").unwrap();
+        let md = search_signatures_to_markdown(tmp.to_str().unwrap(), "goodbye");
+        assert!(md.starts_with("Error:"));
         std::fs::remove_file(&tmp).ok();
     }
 }

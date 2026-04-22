@@ -1,4 +1,3 @@
-use quote::quote;
 use syn::{
     visit::Visit, Attribute, File, ItemEnum, ItemFn, ItemImpl, ItemStruct, ItemTrait, Lit, Meta,
 };
@@ -24,6 +23,67 @@ pub fn extract_docs(attrs: &[Attribute]) -> Vec<String> {
         .collect()
 }
 
+/// Format a function signature using prettyplease.
+/// Returns the full signature including the `fn` keyword (e.g., "fn foo(x: i32) -> bool").
+fn format_fn_sig(sig: &syn::Signature) -> String {
+    let file: syn::File = syn::parse_quote! {
+        #sig {}
+    };
+    let formatted = prettyplease::unparse(&file);
+    // Join multi-line output (where clauses) into a single line for compact storage
+    let single_line: String = formatted
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    // Strip the body: "fn foo() -> bool {" -> "fn foo() -> bool"
+    if let Some(pos) = single_line.find('{') {
+        let mut sig_part = single_line[..pos].trim_end().to_string();
+        // Remove trailing comma from where clause
+        if sig_part.ends_with(',') {
+            sig_part.pop();
+            sig_part = sig_part.trim_end().to_string();
+        }
+        sig_part
+    } else {
+        single_line.trim().to_string()
+    }
+}
+
+/// Format a type expression using prettyplease.
+fn format_type(ty: &syn::Type) -> String {
+    let file: syn::File = syn::parse_quote! {
+        const _: #ty = ();
+    };
+    let formatted = prettyplease::unparse(&file);
+    let single_line: String = formatted
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let trimmed = single_line.trim();
+    // Extract the type between ": " and " = ()"
+    let start = trimmed.find(": ").map(|i| i + 2).unwrap_or(0);
+    let end = trimmed.rfind(" = ()").unwrap_or(trimmed.len());
+    trimmed[start..end].trim().to_string()
+}
+
+/// Format generics parameters using prettyplease.
+/// Returns e.g. "<K, V>" or empty string.
+fn format_generics(generics: &syn::Generics) -> String {
+    if generics.params.is_empty() {
+        return String::new();
+    }
+    let ty: syn::Type = syn::parse_quote!(_Dummy #generics);
+    let full = format_type(&ty);
+    full.strip_prefix("_Dummy")
+        .map(str::trim)
+        .unwrap_or(&full)
+        .to_string()
+}
+
 struct SignatureCollector {
     signatures: Vec<Signature>,
 }
@@ -39,17 +99,14 @@ impl SignatureCollector {
 impl<'ast> Visit<'ast> for SignatureCollector {
     fn visit_item_fn(&mut self, i: &'ast ItemFn) {
         let docs = extract_docs(&i.attrs);
-        let sig = &i.sig;
-        self.signatures.push(Signature::Fn {
-            docs,
-            signature: format!("fn   {}", quote! { #sig }),
-        });
+        let signature = format_fn_sig(&i.sig);
+        self.signatures.push(Signature::Fn { docs, signature });
     }
 
     fn visit_item_struct(&mut self, i: &'ast ItemStruct) {
         let docs = extract_docs(&i.attrs);
         let name = i.ident.to_string();
-        let generics = format!("{}", quote! { #i.generics });
+        let generics = format_generics(&i.generics);
         self.signatures.push(Signature::Struct {
             docs,
             name,
@@ -60,7 +117,7 @@ impl<'ast> Visit<'ast> for SignatureCollector {
     fn visit_item_enum(&mut self, i: &'ast ItemEnum) {
         let docs = extract_docs(&i.attrs);
         let name = i.ident.to_string();
-        let generics = format!("{}", quote! { #i.generics });
+        let generics = format_generics(&i.generics);
         let mut variants = Vec::new();
         for variant in &i.variants {
             let vdocs = extract_docs(&variant.attrs);
@@ -70,10 +127,7 @@ impl<'ast> Visit<'ast> for SignatureCollector {
                     let fields: Vec<String> = f
                         .named
                         .iter()
-                        .map(|f| {
-                            let (fname, ty) = (&f.ident, &f.ty);
-                            format!("{}: {}", quote! { #fname }, quote! { #ty })
-                        })
+                        .map(|f| format!("{}: {}", f.ident.as_ref().unwrap(), format_type(&f.ty)))
                         .collect();
                     variants.push(EnumVariant::Named {
                         name: vname,
@@ -85,10 +139,7 @@ impl<'ast> Visit<'ast> for SignatureCollector {
                     let types: Vec<String> = f
                         .unnamed
                         .iter()
-                        .map(|f| {
-                            let ty = &f.ty;
-                            format!("{}", quote! { #ty })
-                        })
+                        .map(|f| format_type(&f.ty))
                         .collect();
                     variants.push(EnumVariant::Tuple {
                         name: vname,
@@ -115,7 +166,7 @@ impl<'ast> Visit<'ast> for SignatureCollector {
     fn visit_item_trait(&mut self, i: &'ast ItemTrait) {
         let docs = extract_docs(&i.attrs);
         let name = i.ident.to_string();
-        let generics = format!("{}", quote! { #i.generics });
+        let generics = format_generics(&i.generics);
         self.signatures.push(Signature::Trait {
             docs,
             name,
@@ -124,27 +175,28 @@ impl<'ast> Visit<'ast> for SignatureCollector {
     }
 
     fn visit_item_impl(&mut self, i: &'ast ItemImpl) {
-        let ty_str = format!("{}", quote! { #i.self_ty });
-        let (trait_name, for_type) = if let Some((_, trait_, _)) = &i.trait_ {
-            (Some(format!("{}", quote! { #trait_ })), ty_str)
+        let for_type = format_type(&i.self_ty);
+        let (trait_name, for_type) = if let Some((_, trait_path, _)) = &i.trait_ {
+            let ty: syn::Type = syn::parse_quote!(#trait_path);
+            (Some(format_type(&ty)), for_type)
         } else {
-            (None, ty_str)
+            (None, for_type)
         };
         let mut associated_collector = SignatureCollector::new();
         for item in &i.items {
             match item {
                 syn::ImplItem::Fn(f) => {
                     let docs = extract_docs(&f.attrs);
-                    let sig = &f.sig;
+                    let signature = format_fn_sig(&f.sig);
                     associated_collector.signatures.push(Signature::Fn {
                         docs,
-                        signature: format!("fn   {}", quote! { #sig }),
+                        signature,
                     });
                 }
                 syn::ImplItem::Const(c) => {
                     associated_collector.signatures.push(Signature::Fn {
                         docs: extract_docs(&c.attrs),
-                        signature: format!("const   {}: {}", c.ident, quote! { #c.ty }),
+                        signature: format!("const {}: {}", c.ident, format_type(&c.ty)),
                     });
                 }
                 syn::ImplItem::Type(t) => {
@@ -194,6 +246,8 @@ pub fn greet(name: &str) -> String {
                 assert!(signature.contains("greet"));
                 assert!(signature.contains("name"));
                 assert!(signature.contains("String"));
+                // prettyplease should produce proper spacing: &str not & str
+                assert!(!signature.contains("& str"), "should have &str not & str: got {}", signature);
             }
             other => panic!("expected Fn, got {:?}", other),
         }
@@ -440,6 +494,24 @@ fn spaced() {}
                 assert_eq!(docs[0], "Leading spaces.");
                 assert_eq!(docs[1], "");
                 assert_eq!(docs[2], "Trailing spaces after trim.");
+            }
+            other => panic!("expected Fn, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn prettyplease_formats_generics_without_extra_spaces() {
+        let sigs = analyze_source("fn foo<T: Clone>(x: &T, items: &[Vec<u8>]) -> Vec<T> {}");
+        match &sigs[0] {
+            Signature::Fn { signature, .. } => {
+                // prettyplease should produce proper spacing: <T: Clone> not < T : Clone >
+                assert!(signature.contains("<T: Clone>"), "generics should have tight spacing: got {}", signature);
+                // &T not & T
+                assert!(signature.contains("&T"), "ref should have tight spacing: got {}", signature);
+                // &[Vec<u8>] not &[ Vec < u8 > ]
+                assert!(signature.contains("&[Vec<u8>]"), "slice type should have tight spacing: got {}", signature);
+                // Vec<u8> not Vec < u8 >
+                assert!(signature.contains("Vec<u8>"), "generic type should have tight spacing: got {}", signature);
             }
             other => panic!("expected Fn, got {:?}", other),
         }
